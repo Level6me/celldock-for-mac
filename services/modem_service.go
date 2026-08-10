@@ -61,8 +61,19 @@ func (s *ModemService) checkActiveCallState() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// If no active calls in AT+CLCC output
-	if !strings.Contains(resp, "+CLCC:") {
+	// Parse AT+CLCC: <id>,<dir>,<stat>,<mode>,<mpty>[,<number>,<type>]
+	re := regexp.MustCompile(`\+CLCC:\s*\d+,\s*(\d+),\s*(\d+),\s*\d+,\s*\d+(?:,\s*"([^"]*)")?`)
+	matches := re.FindAllStringSubmatch(resp, -1)
+
+	var validMatches [][]string
+	for _, m := range matches {
+		if len(m) >= 4 && strings.TrimSpace(m[3]) != "" {
+			validMatches = append(validMatches, m)
+		}
+	}
+
+	// If no valid calls with numbers exist in AT+CLCC, mark all active/dialing/ringing calls as ended
+	if len(validMatches) == 0 {
 		for _, rec := range s.callRecords {
 			if rec.Status == "dialing" || rec.Status == "ringing" || rec.Status == "active" {
 				rec.Status = "ended"
@@ -70,71 +81,57 @@ func (s *ModemService) checkActiveCallState() {
 				if rec.DurationSec <= 0 {
 					rec.DurationSec = 1
 				}
-				s.atLogs = append(s.atLogs, fmt.Sprintf("[%s] 通话已自然结束/对方已挂断, 时长: %d秒", time.Now().Format("15:04:05"), rec.DurationSec))
+				s.atLogs = append(s.atLogs, fmt.Sprintf("[%s] 对方已挂断/通话已结束, 时长: %d秒", time.Now().Format("15:04:05"), rec.DurationSec))
 			}
 		}
 		return
 	}
 
-	// stat: 0=active (已接通), 1=held, 2=dialing (正在拨号), 3=alerting (响铃中), 4=incoming
-	re := regexp.MustCompile(`\+CLCC:\s*\d+,\s*(\d+),\s*(\d+),\s*\d+,\s*\d+(?:,\s*"([^"]*)")?`)
-	matches := re.FindAllStringSubmatch(resp, -1)
+	for _, m := range validMatches {
+		dirStr := m[1]
+		statCode := m[2]
+		phoneNum := m[3]
 
-	for _, m := range matches {
-		if len(m) >= 3 {
-			dirStr := m[1]
-			statCode := m[2]
-			phoneNum := ""
-			if len(m) >= 4 {
-				phoneNum = m[3]
-			}
+		statusText := "active"
+		switch statCode {
+		case "2":
+			statusText = "dialing"
+		case "3":
+			statusText = "ringing"
+		case "4":
+			statusText = "ringing"
+		case "0":
+			statusText = "active"
+		}
 
-			var targetRec *models.CallRecord
-			for _, rec := range s.callRecords {
-				if rec.Status != "ended" {
-					targetRec = rec
-					break
-				}
+		var targetRec *models.CallRecord
+		for _, rec := range s.callRecords {
+			if rec.Status != "ended" {
+				targetRec = rec
+				break
 			}
+		}
 
-			// Ignore empty phone number internal modem voice slot (+CLCC: 2,1,0,1,0,"",128)
-			if phoneNum == "" && (targetRec == nil || targetRec.PhoneNumber == "") {
-				continue
+		if targetRec != nil {
+			targetRec.Status = statusText
+			if phoneNum != "" && targetRec.PhoneNumber == "" {
+				targetRec.PhoneNumber = phoneNum
 			}
-
-			statusText := "active"
-			switch statCode {
-			case "2":
-				statusText = "dialing"
-			case "3":
-				statusText = "ringing"
-			case "4":
-				statusText = "ringing"
-			case "0":
-				statusText = "active"
+		} else {
+			dir := "outbound"
+			if dirStr == "1" {
+				dir = "inbound"
 			}
-
-			if targetRec != nil {
-				targetRec.Status = statusText
-				if phoneNum != "" && targetRec.PhoneNumber == "" {
-					targetRec.PhoneNumber = phoneNum
-				}
-			} else {
-				dir := "outbound"
-				if dirStr == "1" {
-					dir = "inbound"
-				}
-				newRec := &models.CallRecord{
-					ID:          fmt.Sprintf("call_%d", time.Now().UnixNano()),
-					ModuleID:    "mod_hw_1",
-					PhoneNumber: phoneNum,
-					Direction:   dir,
-					Status:      statusText,
-					StartTime:   time.Now(),
-					DurationSec: 0,
-				}
-				s.callRecords = append([]*models.CallRecord{newRec}, s.callRecords...)
+			newRec := &models.CallRecord{
+				ID:          fmt.Sprintf("call_%d", time.Now().UnixNano()),
+				ModuleID:    "mod_hw_1",
+				PhoneNumber: phoneNum,
+				Direction:   dir,
+				Status:      statusText,
+				StartTime:   time.Now(),
+				DurationSec: 0,
 			}
+			s.callRecords = append([]*models.CallRecord{newRec}, s.callRecords...)
 		}
 	}
 }
@@ -314,7 +311,7 @@ func (s *ModemService) InitiateCall(moduleID, phoneNumber string) (*models.CallR
 		ModuleID:    moduleID,
 		PhoneNumber: phoneNumber,
 		Direction:   "outbound",
-		Status:      "active",
+		Status:      "dialing",
 		StartTime:   time.Now(),
 		DurationSec: 0,
 	}

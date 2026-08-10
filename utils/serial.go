@@ -11,7 +11,11 @@ import (
 	"time"
 )
 
-var serialMutex sync.Mutex
+var (
+	serialMutex sync.Mutex
+	activeFD    *os.File
+	activePort  string
+)
 
 // ListSerialPorts discovers connected cellular USB serial ports across Linux / Mac.
 func ListSerialPorts() ([]string, error) {
@@ -51,16 +55,38 @@ func ListSerialPorts() ([]string, error) {
 	return validPorts, nil
 }
 
-// ExecATCommand sends a raw AT command to a physical serial port with global mutex lock protection.
+func getPersistentFD(port string) (*os.File, error) {
+	if activeFD != nil && activePort == port {
+		return activeFD, nil
+	}
+	if activeFD != nil {
+		_ = activeFD.Close()
+		activeFD = nil
+	}
+
+	fd, err := syscall.Open(port, syscall.O_RDWR|syscall.O_NOCTTY|syscall.O_NONBLOCK, 0666)
+	if err != nil {
+		return nil, err
+	}
+	activeFD = os.NewFile(uintptr(fd), port)
+	activePort = port
+	return activeFD, nil
+}
+
+// ExecATCommand sends a raw AT command to a physical serial port with persistent file descriptor to keep DTR line active.
 func ExecATCommand(port string, cmd string, waitDuration time.Duration) (string, error) {
 	serialMutex.Lock()
 	defer serialMutex.Unlock()
 
-	fd, err := syscall.Open(port, syscall.O_RDWR|syscall.O_NONBLOCK, 0666)
+	f, err := getPersistentFD(port)
 	if err != nil {
 		return "", err
 	}
-	defer syscall.Close(fd)
+	fd := int(f.Fd())
+
+	// Flush old RX
+	flushBuf := make([]byte, 1024)
+	_, _ = syscall.Read(fd, flushBuf)
 
 	if !strings.HasSuffix(cmd, "\r\n") {
 		cmd += "\r\n"
@@ -68,6 +94,8 @@ func ExecATCommand(port string, cmd string, waitDuration time.Duration) (string,
 
 	_, err = syscall.Write(fd, []byte(cmd))
 	if err != nil {
+		_ = activeFD.Close()
+		activeFD = nil
 		return "", err
 	}
 
@@ -84,7 +112,8 @@ func ExecATCommand(port string, cmd string, waitDuration time.Duration) (string,
 		n, _ := syscall.Read(fd, buf)
 		if n > 0 {
 			output = append(output, buf[:n]...)
-			if strings.Contains(string(output), "OK") || strings.Contains(string(output), "ERROR") || strings.Contains(string(output), "NO CARRIER") {
+			outStr := string(output)
+			if strings.Contains(outStr, "OK") || strings.Contains(outStr, "ERROR") || strings.Contains(outStr, "NO CARRIER") {
 				break
 			}
 		}

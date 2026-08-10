@@ -320,7 +320,7 @@ func (s *ModemService) HangupCall(moduleID string) error {
 	s.mu.Lock()
 	// Immediately mark all active calls as ended in memory
 	for _, rec := range s.callRecords {
-		if rec.Status == "active" {
+		if rec.Status == "active" || rec.Status == "dialing" || rec.Status == "ringing" {
 			rec.Status = "ended"
 			rec.DurationSec = int(time.Since(rec.StartTime).Seconds())
 			if rec.DurationSec <= 0 {
@@ -337,7 +337,8 @@ func (s *ModemService) HangupCall(moduleID string) error {
 	s.mu.Unlock()
 
 	go func() {
-		rawResp, _ := utils.ExecATCommand(port, "ATH", 2*time.Second)
+		rawResp, _ := utils.ExecATCommand(port, "ATH\r\n", 2*time.Second)
+		_, _ = utils.ExecATCommand(port, "AT+CHUP\r\n", 1*time.Second)
 		s.mu.Lock()
 		s.atLogs = append(s.atLogs, fmt.Sprintf("[%s] %s -> Hangup ATH: %s", time.Now().Format("15:04:05"), port, rawResp))
 		s.mu.Unlock()

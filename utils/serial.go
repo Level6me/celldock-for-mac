@@ -6,9 +6,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
+
+var serialMutex sync.Mutex
 
 // ListSerialPorts discovers connected cellular USB serial ports across Linux / Mac.
 func ListSerialPorts() ([]string, error) {
@@ -48,8 +51,11 @@ func ListSerialPorts() ([]string, error) {
 	return validPorts, nil
 }
 
-// ExecATCommand sends a raw AT command to a physical serial port and returns raw hardware response.
+// ExecATCommand sends a raw AT command to a physical serial port with global mutex lock protection.
 func ExecATCommand(port string, cmd string, waitDuration time.Duration) (string, error) {
+	serialMutex.Lock()
+	defer serialMutex.Unlock()
+
 	fd, err := syscall.Open(port, syscall.O_RDWR|syscall.O_NONBLOCK, 0666)
 	if err != nil {
 		return "", err

@@ -52,20 +52,6 @@ func (s *ModemService) startCallStateMonitor() {
 }
 
 func (s *ModemService) checkActiveCallState() {
-	s.mu.Lock()
-	var activeRec *models.CallRecord
-	for _, rec := range s.callRecords {
-		if rec.Status == "dialing" || rec.Status == "ringing" || rec.Status == "active" {
-			activeRec = rec
-			break
-		}
-	}
-	s.mu.Unlock()
-
-	if activeRec == nil {
-		return
-	}
-
 	port := "/dev/ttyUSB2"
 	resp, err := utils.ExecATCommand(port, "AT+CLCC\r\n", 400*time.Millisecond)
 	if err != nil {
@@ -75,28 +61,80 @@ func (s *ModemService) checkActiveCallState() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// If no active calls in AT+CLCC output
 	if !strings.Contains(resp, "+CLCC:") {
-		if activeRec.Status != "ended" {
-			activeRec.Status = "ended"
-			activeRec.DurationSec = int(time.Since(activeRec.StartTime).Seconds())
-			if activeRec.DurationSec <= 0 {
-				activeRec.DurationSec = 1
+		for _, rec := range s.callRecords {
+			if rec.Status == "dialing" || rec.Status == "ringing" || rec.Status == "active" {
+				rec.Status = "ended"
+				rec.DurationSec = int(time.Since(rec.StartTime).Seconds())
+				if rec.DurationSec <= 0 {
+					rec.DurationSec = 1
+				}
+				s.atLogs = append(s.atLogs, fmt.Sprintf("[%s] 通话已自然结束/对方已挂断, 时长: %d秒", time.Now().Format("15:04:05"), rec.DurationSec))
 			}
-			s.atLogs = append(s.atLogs, fmt.Sprintf("[%s] 对方已挂断/通话自然结束, 持续时间: %d秒", time.Now().Format("15:04:05"), activeRec.DurationSec))
 		}
 		return
 	}
 
-	// stat: 0=active (已接通), 1=held, 2=dialing (正在拨号), 3=alerting (正在响铃)
-	if match := regexp.MustCompile(`\+CLCC:\s*\d+,\s*\d+,\s*(\d+)`).FindStringSubmatch(resp); len(match) > 1 {
-		statCode := match[1]
-		switch statCode {
-		case "2":
-			activeRec.Status = "dialing"
-		case "3":
-			activeRec.Status = "ringing"
-		case "0":
-			activeRec.Status = "active"
+	// stat: 0=active (已接通), 1=held, 2=dialing (正在拨号), 3=alerting (响铃中), 4=incoming
+	re := regexp.MustCompile(`\+CLCC:\s*\d+,\s*(\d+),\s*(\d+),\s*\d+,\s*\d+(?:,\s*"([^"]*)")?`)
+	matches := re.FindAllStringSubmatch(resp, -1)
+
+	for _, m := range matches {
+		if len(m) >= 3 {
+			dirStr := m[1]
+			statCode := m[2]
+			phoneNum := ""
+			if len(m) >= 4 {
+				phoneNum = m[3]
+			}
+
+			var targetRec *models.CallRecord
+			for _, rec := range s.callRecords {
+				if rec.Status != "ended" {
+					targetRec = rec
+					break
+				}
+			}
+
+			// Ignore empty phone number internal modem voice slot (+CLCC: 2,1,0,1,0,"",128)
+			if phoneNum == "" && (targetRec == nil || targetRec.PhoneNumber == "") {
+				continue
+			}
+
+			statusText := "active"
+			switch statCode {
+			case "2":
+				statusText = "dialing"
+			case "3":
+				statusText = "ringing"
+			case "4":
+				statusText = "ringing"
+			case "0":
+				statusText = "active"
+			}
+
+			if targetRec != nil {
+				targetRec.Status = statusText
+				if phoneNum != "" && targetRec.PhoneNumber == "" {
+					targetRec.PhoneNumber = phoneNum
+				}
+			} else {
+				dir := "outbound"
+				if dirStr == "1" {
+					dir = "inbound"
+				}
+				newRec := &models.CallRecord{
+					ID:          fmt.Sprintf("call_%d", time.Now().UnixNano()),
+					ModuleID:    "mod_hw_1",
+					PhoneNumber: phoneNum,
+					Direction:   dir,
+					Status:      statusText,
+					StartTime:   time.Now(),
+					DurationSec: 0,
+				}
+				s.callRecords = append([]*models.CallRecord{newRec}, s.callRecords...)
+			}
 		}
 	}
 }

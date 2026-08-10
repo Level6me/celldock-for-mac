@@ -39,8 +39,8 @@ func GetModemService() *ModemService {
 		}
 		// Async hardware scanning loop
 		go globalModemService.startHardwareScanner()
-		// Async AT+CLCC call state polling loop
-		go globalModemService.startCallStateMonitor()
+		// Disable AT+CLCC polling loop to prevent any AT serial interference
+		// go globalModemService.startCallStateMonitor()
 	})
 	return globalModemService
 }

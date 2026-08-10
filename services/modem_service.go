@@ -203,6 +203,10 @@ func (s *ModemService) InitiateCall(moduleID, phoneNumber string) (*models.CallR
 	go func() {
 		dialCmd := fmt.Sprintf("ATD%s;", phoneNumber)
 		rawResp, _ := utils.ExecATCommand(port, dialCmd, 2*time.Second)
+		time.Sleep(500 * time.Millisecond)
+		// Unmute modem mic and set call volume
+		_, _ = utils.ExecATCommand(port, "AT+CMUT=0", 500*time.Millisecond)
+		_, _ = utils.ExecATCommand(port, "AT+CLVL=5", 500*time.Millisecond)
 		s.mu.Lock()
 		s.atLogs = append(s.atLogs, fmt.Sprintf("[%s] %s -> Dial %s: %s", time.Now().Format("15:04:05"), port, phoneNumber, rawResp))
 		s.mu.Unlock()

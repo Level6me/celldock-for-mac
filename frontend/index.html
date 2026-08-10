@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme:light)">
+<meta name="theme-color" content="#000" media="(prefers-color-scheme:dark)">
+<title>CellDock Web</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{--bg:#f2f2f7;--card:#fff;--text:#000;--sec:#8e8e93;--accent:#007aff;--danger:#ff3b30;--ok:#34c759;--warn:#ff9500;--dock:rgba(255,255,255,.85);--brd:rgba(128,128,128,.15)}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--card:#1c1c1e;--text:#fff;--sec:#98989d;--dock:rgba(28,28,30,.85)}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro',sans-serif;padding-bottom:calc(120px + env(safe-area-inset-bottom))}
+.ctn{padding:20px 16px;max-width:720px;margin:0 auto;padding-top:max(20px,env(safe-area-inset-top))}
+.hdr{margin:10px 0 20px;display:flex;justify-content:space-between;align-items:flex-end}
+.ttl{font-size:32px;font-weight:700}
+.hdr-sub{font-size:12px;color:var(--sec);margin-top:2px}
+.hdr-r{text-align:right}
+.sdot{font-size:12px;color:var(--ok);display:inline-flex;align-items:center;gap:4px;font-weight:600}
+.sdot::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pulse 2s infinite}
+@keyframes pulse{0%{opacity:1}50%{opacity:.3}100%{opacity:1}}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.card{background:var(--card);border-radius:20px;padding:18px;box-shadow:0 4px 14px rgba(0,0,0,.03);margin-bottom:14px}
+.cf{grid-column:1/-1}
+.vb{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+.vs{font-size:14px;color:var(--sec);font-weight:500}
+.sub{font-size:13px;color:var(--sec);font-weight:600;margin:20px 0 10px 4px;text-transform:uppercase;letter-spacing:.5px}
+.li{padding:14px 0;border-bottom:.5px solid var(--brd);display:flex;justify-content:space-between;align-items:center}
+.li:last-child{border-bottom:none}
+.ll{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+.licon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;background:rgba(0,122,255,.1);color:var(--accent)}
+.ln{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lm{font-size:12px;color:var(--sec);margin-top:2px}
+.badge{font-size:11px;padding:3px 8px;border-radius:8px;font-weight:600}
+.b-ok{background:rgba(52,199,89,.15);color:var(--ok)}
+.b-err{background:rgba(255,59,48,.15);color:var(--danger)}
+.b-warn{background:rgba(255,149,0,.15);color:var(--warn)}
+.btn{padding:14px;border-radius:14px;border:none;font-weight:600;font-size:16px;cursor:pointer;width:100%;transition:transform .15s cubic-bezier(0.16,1,0.3,1),background .2s,opacity .2s}
+.btn:active{transform:scale(.97)}
+.btn-p{background:var(--accent);color:#fff}
+.btn-d{background:var(--danger);color:#fff}
+.btn-d:active{transform:scale(.94)}
+.btn-s{background:rgba(128,128,128,.12);color:var(--text)}
+.dock{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:95%;max-width:540px;height:64px;background:var(--dock);backdrop-filter:blur(25px);-webkit-backdrop-filter:blur(25px);border-radius:32px;display:flex;justify-content:space-evenly;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.12);z-index:1000}
+.dbtn{border:none;background:none;padding:6px 12px;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;color:var(--sec);transition:transform .15s cubic-bezier(0.16,1,0.3,1),color .15s,background .15s}
+.dbtn:active{transform:scale(.90)}
+.dbtn.act{color:var(--accent);background:rgba(0,122,255,.1)}
+.dbtn svg{width:22px;height:22px;fill:currentColor}
+.dlbl{font-size:10px;font-weight:600}
+.pg{display:none;opacity:0;transition:opacity .25s cubic-bezier(0.16,1,0.3,1)}
+.pg.act{display:block;opacity:1}
+.minput{background:rgba(128,128,128,.08);border:none;padding:12px 16px;border-radius:12px;width:100%;color:var(--text);font-size:15px;margin-bottom:12px;outline:none}
+.minput:focus{box-shadow:0 0 0 2px var(--accent)}
+.toast{position:fixed;top:calc(20px + env(safe-area-inset-top));left:50%;transform:translateX(-50%) translateY(-100px);background:var(--card);color:var(--text);padding:12px 24px;border-radius:16px;font-weight:600;font-size:14px;box-shadow:0 12px 36px rgba(0,0,0,.18);z-index:3000;transition:transform .35s cubic-bezier(0.34,1.56,0.64,1);pointer-events:none}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.logbox{background:var(--bg);padding:14px;border-radius:12px;font-family:'SF Mono',monospace;font-size:11px;white-space:pre-wrap;max-height:300px;overflow-y:auto;line-height:1.6}
+</style>
+</head>
+<body>
+
+<div class="ctn">
+  <div class="hdr">
+    <div>
+      <div class="ttl">CellDock</div>
+      <div class="hdr-sub">蜂窝网络·短信·电话·代理共享</div>
+    </div>
+    <div class="hdr-r">
+      <div class="sdot">守护进程已连接</div>
+      <div style="font-size:11px;color:var(--sec);margin-top:2px;">支持 树莓派 / Linux / Mac</div>
+    </div>
+  </div>
+
+  <!-- Page 1: 蜂窝模组与概览 -->
+  <div id="pg-modem" class="pg act">
+    <div class="grid">
+      <div class="card">
+        <div class="vs">在线蜂窝模组</div>
+        <div class="vb" id="mod-count">2</div>
+      </div>
+      <div class="card">
+        <div class="vs">信号质量 (最高)</div>
+        <div class="vb" id="sig-quality">92%</div>
+      </div>
+    </div>
+
+    <div class="sub">检测到的蜂窝设备</div>
+    <div id="modem-list">
+      <div class="card">加载模组中...</div>
+    </div>
+  </div>
+
+  <!-- Page 2: 短信与验证码 -->
+  <div id="pg-sms" class="pg">
+    <div class="card">
+      <div style="font-size:16px;font-weight:700;margin-bottom:12px;">发送短信</div>
+      <input type="text" id="sms-to" class="minput" placeholder="接收方手机号 (如 10086)">
+      <textarea id="sms-text" class="minput" style="height:70px;resize:none;" placeholder="短信内容..."></textarea>
+      <button class="btn btn-p" onclick="sendSMS()">发送短信</button>
+    </div>
+
+    <div class="sub">短信收件箱与验证码</div>
+    <div id="sms-list">
+      <div class="card">加载短信中...</div>
+    </div>
+  </div>
+
+  <!-- Page 3: 电话与音频 -->
+  <div id="pg-phone" class="pg">
+    <div class="card">
+      <div style="font-size:16px;font-weight:700;margin-bottom:12px;">电话拨号盘</div>
+      <input type="text" id="phone-num" class="minput" placeholder="输入要拨打的电话号码" style="font-size:22px;text-align:center;letter-spacing:1px;">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
+        <button class="btn btn-s" onclick="pressDial('1')">1</button>
+        <button class="btn btn-s" onclick="pressDial('2')">2</button>
+        <button class="btn btn-s" onclick="pressDial('3')">3</button>
+        <button class="btn btn-s" onclick="pressDial('4')">4</button>
+        <button class="btn btn-s" onclick="pressDial('5')">5</button>
+        <button class="btn btn-s" onclick="pressDial('6')">6</button>
+        <button class="btn btn-s" onclick="pressDial('7')">7</button>
+        <button class="btn btn-s" onclick="pressDial('8')">8</button>
+        <button class="btn btn-s" onclick="pressDial('9')">9</button>
+        <button class="btn btn-s" onclick="pressDial('*')">*</button>
+        <button class="btn btn-s" onclick="pressDial('0')">0</button>
+        <button class="btn btn-s" onclick="pressDial('#')">#</button>
+      </div>
+      <button class="btn btn-p" onclick="makeCall()">📞 发起呼叫</button>
+    </div>
+
+    <div class="sub">通话记录与录音</div>
+    <div id="call-list">
+      <div class="card">加载通话记录中...</div>
+    </div>
+  </div>
+
+  <!-- Page 4: SOCKS5 代理 -->
+  <div id="pg-proxy" class="pg">
+    <div class="card">
+      <div style="font-size:16px;font-weight:700;margin-bottom:12px;">SOCKS5 蜂窝代理中心</div>
+      <div style="font-size:13px;color:var(--sec);margin-bottom:14px;">将绑定的蜂窝网络作为专属 SOCKS5 代理出口共享至局域网或本机应用。</div>
+      <div class="li">
+        <div>
+          <div style="font-weight:600;">监听端口</div>
+          <div style="font-size:12px;color:var(--sec);">默认: 1080</div>
+        </div>
+        <span class="badge b-ok">运行中: 1080</span>
+      </div>
+      <div class="li">
+        <div>
+          <div style="font-weight:600;">局域网共享 (LAN)</div>
+          <div style="font-size:12px;color:var(--sec);">允许同一局域网设备使用</div>
+        </div>
+        <span class="badge b-info">已启用</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Page 5: AT 控制台与 eSIM -->
+  <div id="pg-at" class="pg">
+    <div class="card">
+      <div style="font-size:16px;font-weight:700;margin-bottom:12px;">AT 控制台</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input type="text" id="at-cmd" class="minput" placeholder="输入 AT 指令 (如 AT+CSQ)" style="margin-bottom:0;flex:1;">
+        <button class="btn btn-p" style="width:auto;padding:0 20px;" onclick="sendAT()">发送</button>
+      </div>
+      <div class="logbox" id="at-log-box">等待发送 AT 指令...</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 底部 Dock 导航栏 -->
+<div class="dock">
+  <button class="dbtn act" onclick="switchPage('modem', this)">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+    <span class="dlbl">概览模组</span>
+  </button>
+  <button class="dbtn" onclick="switchPage('sms', this)">
+    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
+    <span class="dlbl">短信收发</span>
+  </button>
+  <button class="dbtn" onclick="switchPage('phone', this)">
+    <svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+    <span class="dlbl">电话对讲</span>
+  </button>
+  <button class="dbtn" onclick="switchPage('proxy', this)">
+    <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8s0 0 0 0z"/></svg>
+    <span class="dlbl">SOCKS5</span>
+  </button>
+  <button class="dbtn" onclick="switchPage('at', this)">
+    <svg viewBox="0 0 24 24"><path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
+    <span class="dlbl">AT控制台</span>
+  </button>
+</div>
+
+<div id="toast-box" class="toast">提示信息</div>
+
+<script>
+function switchPage(name, btn) {
+  document.querySelectorAll('.pg').forEach(p => p.classList.remove('act'));
+  document.querySelectorAll('.dbtn').forEach(b => b.classList.remove('act'));
+  document.getElementById('pg-' + name).classList.add('act');
+  btn.classList.add('act');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast-box');
+  t.innerText = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function pressDial(num) {
+  document.getElementById('phone-num').value += num;
+}
+
+async function loadModules() {
+  try {
+    const res = await fetch('/api/modules').then(r => r.json());
+    if(res.code === 200) {
+      document.getElementById('mod-count').innerText = res.data.length;
+      let html = '';
+      res.data.forEach(m => {
+        html += `<div class="card">
+          <div class="li">
+            <div class="ll">
+              <div class="licon">📶</div>
+              <div>
+                <div class="ln">${m.name}</div>
+                <div class="lm">端口: ${m.port} | IP: ${m.ip_address}</div>
+              </div>
+            </div>
+            <span class="badge b-ok">${m.operator} (${m.network_tech})</span>
+          </div>
+          <div style="font-size:12px;color:var(--sec);margin-top:10px;">信号强度: ${m.signal_percent}% (CSQ ${m.signal_csq})</div>
+        </div>`;
+      });
+      document.getElementById('modem-list').innerHTML = html;
+    }
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+async function loadSMS() {
+  try {
+    const res = await fetch('/api/sms').then(r => r.json());
+    if(res.code === 200) {
+      let html = '';
+      res.data.forEach(s => {
+        html += `<div class="card">
+          <div class="li">
+            <div class="ll">
+              <div class="licon">💬</div>
+              <div>
+                <div class="ln">${s.sender}</div>
+                <div class="lm">${new Date(s.timestamp).toLocaleString()}</div>
+              </div>
+            </div>
+            ${s.is_verification ? `<span class="badge b-warn">验证码: ${s.verification_code}</span>` : ''}
+          </div>
+          <div style="font-size:14px;margin-top:10px;line-height:1.5;">${s.content}</div>
+        </div>`;
+      });
+      document.getElementById('sms-list').innerHTML = html;
+    }
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+async function sendSMS() {
+  const to = document.getElementById('sms-to').value;
+  const content = document.getElementById('sms-text').value;
+  if(!to || !content) {
+    showToast('请填写接收号码与短信内容！');
+    return;
+  }
+  const res = await fetch('/api/sms', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({module_id: 'mod_qdc507_01', receiver: to, content: content})
+  }).then(r => r.json());
+  if(res.code === 200) {
+    showToast('短信已发送！');
+    document.getElementById('sms-text').value = '';
+    loadSMS();
+  }
+}
+
+async function makeCall() {
+  const num = document.getElementById('phone-num').value;
+  if(!num) {
+    showToast('请输入要拨打的电话号码！');
+    return;
+  }
+  const res = await fetch('/api/calls', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({module_id: 'mod_qdc507_01', phone_number: num})
+  }).then(r => r.json());
+  if(res.code === 200) {
+    showToast('呼叫请求已发出...');
+  }
+}
+
+async function sendAT() {
+  const cmd = document.getElementById('at-cmd').value;
+  if(!cmd) return;
+  const res = await fetch('/api/at', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({port: '/dev/ttyUSB2', command: cmd})
+  }).then(r => r.json());
+  if(res.code === 200) {
+    const box = document.getElementById('at-log-box');
+    box.innerText += `\n> ${cmd}\n${res.response}`;
+    box.scrollTop = box.scrollHeight;
+    document.getElementById('at-cmd').value = '';
+  }
+}
+
+window.onload = () => {
+  loadModules();
+  loadSMS();
+};
+</script>
+</body>
+</html>

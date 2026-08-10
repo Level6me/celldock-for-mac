@@ -26,3 +26,6 @@ tmp/
 # Project-specific
 website/
 .codex/
+celldock-web
+data/
+logs/

@@ -83,11 +83,17 @@ func RegisterAPIRoutes(mux *http.ServeMux) {
 		}
 
 		if r.Method == http.MethodPost {
-			if strings.HasSuffix(r.URL.Path, "/hangup") {
-				var req struct {
-					ModuleID string `json:"module_id"`
-				}
-				_ = json.NewDecoder(r.Body).Decode(&req)
+			var req struct {
+				ModuleID    string `json:"module_id"`
+				PhoneNumber string `json:"phone_number"`
+				Action      string `json:"action"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+
+			if req.Action == "hangup" || strings.HasSuffix(r.URL.Path, "/hangup") {
 				_ = svc.HangupCall(req.ModuleID)
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"code": 200,
@@ -96,14 +102,6 @@ func RegisterAPIRoutes(mux *http.ServeMux) {
 				return
 			}
 
-			var req struct {
-				ModuleID    string `json:"module_id"`
-				PhoneNumber string `json:"phone_number"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				http.Error(w, err.Error(), 400)
-				return
-			}
 			rec, err := svc.InitiateCall(req.ModuleID, req.PhoneNumber)
 			if err != nil {
 				http.Error(w, err.Error(), 500)

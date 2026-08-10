@@ -38,8 +38,67 @@ func GetModemService() *ModemService {
 		}
 		// Async hardware scanning loop
 		go globalModemService.startHardwareScanner()
+		// Async AT+CLCC call state polling loop
+		go globalModemService.startCallStateMonitor()
 	})
 	return globalModemService
+}
+
+func (s *ModemService) startCallStateMonitor() {
+	ticker := time.NewTicker(1 * time.Second)
+	for range ticker.C {
+		s.checkActiveCallState()
+	}
+}
+
+func (s *ModemService) checkActiveCallState() {
+	s.mu.Lock()
+	var activeRec *models.CallRecord
+	for _, rec := range s.callRecords {
+		if rec.Status == "dialing" || rec.Status == "ringing" || rec.Status == "active" {
+			activeRec = rec
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	if activeRec == nil {
+		return
+	}
+
+	port := "/dev/ttyUSB2"
+	resp, err := utils.ExecATCommand(port, "AT+CLCC\r\n", 400*time.Millisecond)
+	if err != nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !strings.Contains(resp, "+CLCC:") {
+		if activeRec.Status != "ended" {
+			activeRec.Status = "ended"
+			activeRec.DurationSec = int(time.Since(activeRec.StartTime).Seconds())
+			if activeRec.DurationSec <= 0 {
+				activeRec.DurationSec = 1
+			}
+			s.atLogs = append(s.atLogs, fmt.Sprintf("[%s] 对方已挂断/通话自然结束, 持续时间: %d秒", time.Now().Format("15:04:05"), activeRec.DurationSec))
+		}
+		return
+	}
+
+	// stat: 0=active (已接通), 1=held, 2=dialing (正在拨号), 3=alerting (正在响铃)
+	if match := regexp.MustCompile(`\+CLCC:\s*\d+,\s*\d+,\s*(\d+)`).FindStringSubmatch(resp); len(match) > 1 {
+		statCode := match[1]
+		switch statCode {
+		case "2":
+			activeRec.Status = "dialing"
+		case "3":
+			activeRec.Status = "ringing"
+		case "0":
+			activeRec.Status = "active"
+		}
+	}
 }
 
 func (s *ModemService) startHardwareScanner() {

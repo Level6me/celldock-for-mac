@@ -337,10 +337,30 @@ async function loadCalls() {
       let html = '';
       let hasActive = false;
       res.data.forEach(c => {
-        if(c.status === 'active') {
+        let badgeClass = 'b-info';
+        let statusTxt = '已挂断';
+        if(c.status === 'dialing') {
           hasActive = true;
+          badgeClass = 'b-warn';
+          statusTxt = '🔕 正在拨号...';
+          document.getElementById('call-status-txt').innerText = '🔕 正在拨号中...';
           document.getElementById('call-target-num').innerText = '对端号码: ' + c.phone_number;
+        } else if(c.status === 'ringing') {
+          hasActive = true;
+          badgeClass = 'b-warn';
+          statusTxt = '🔔 正在呼叫/响铃中...';
+          document.getElementById('call-status-txt').innerText = '🔔 正在呼叫/响铃中...';
+          document.getElementById('call-target-num').innerText = '对端号码: ' + c.phone_number;
+        } else if(c.status === 'active') {
+          hasActive = true;
+          badgeClass = 'b-ok';
+          statusTxt = '📞 双方已接通';
+          document.getElementById('call-status-txt').innerText = '📞 双方已接通 (通话中)';
+          document.getElementById('call-target-num').innerText = '对端号码: ' + c.phone_number;
+        } else {
+          statusTxt = '已结束 (' + c.duration_sec + '秒)';
         }
+
         html += `<div class="card">
           <div class="li">
             <div class="ll">
@@ -350,7 +370,7 @@ async function loadCalls() {
                 <div class="lm">${new Date(c.start_time).toLocaleString()}</div>
               </div>
             </div>
-            <span class="badge ${c.status === 'active' ? 'b-ok' : 'b-info'}">${c.status === 'active' ? '通话中...' : '已结束 (' + c.duration_sec + '秒)'}</span>
+            <span class="badge ${badgeClass}">${statusTxt}</span>
           </div>
         </div>`;
       });

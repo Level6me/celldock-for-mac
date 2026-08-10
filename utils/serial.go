@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"syscall"
+	"time"
 )
 
 // ListSerialPorts discovers connected cellular USB serial ports across Linux / Mac.
@@ -32,7 +35,6 @@ func ListSerialPorts() ([]string, error) {
 		}
 	}
 
-	// Filter existing device files
 	var validPorts []string
 	for _, p := range ports {
 		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
@@ -44,4 +46,43 @@ func ListSerialPorts() ([]string, error) {
 		return nil, fmt.Errorf("no cellular modem USB serial ports found")
 	}
 	return validPorts, nil
+}
+
+// ExecATCommand sends a raw AT command to a physical serial port and returns raw hardware response.
+func ExecATCommand(port string, cmd string, waitDuration time.Duration) (string, error) {
+	fd, err := syscall.Open(port, syscall.O_RDWR|syscall.O_NONBLOCK, 0666)
+	if err != nil {
+		return "", err
+	}
+	defer syscall.Close(fd)
+
+	if !strings.HasSuffix(cmd, "\r\n") {
+		cmd += "\r\n"
+	}
+
+	_, err = syscall.Write(fd, []byte(cmd))
+	if err != nil {
+		return "", err
+	}
+
+	if waitDuration <= 0 {
+		waitDuration = 300 * time.Millisecond
+	}
+
+	deadline := time.Now().Add(waitDuration)
+	var output []byte
+	buf := make([]byte, 4096)
+
+	for time.Now().Before(deadline) {
+		time.Sleep(30 * time.Millisecond)
+		n, _ := syscall.Read(fd, buf)
+		if n > 0 {
+			output = append(output, buf[:n]...)
+			if strings.Contains(string(output), "OK") || strings.Contains(string(output), "ERROR") {
+				break
+			}
+		}
+	}
+
+	return string(output), nil
 }

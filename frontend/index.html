@@ -22,7 +22,6 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 @keyframes pulse{0%{opacity:1}50%{opacity:.3}100%{opacity:1}}
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
 .card{background:var(--card);border-radius:20px;padding:18px;box-shadow:0 4px 14px rgba(0,0,0,.03);margin-bottom:14px}
-.cf{grid-column:1/-1}
 .vb{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
 .vs{font-size:14px;color:var(--sec);font-weight:500}
 .sub{font-size:13px;color:var(--sec);font-weight:600;margin:20px 0 10px 4px;text-transform:uppercase;letter-spacing:.5px}
@@ -55,6 +54,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .toast{position:fixed;top:calc(20px + env(safe-area-inset-top));left:50%;transform:translateX(-50%) translateY(-100px);background:var(--card);color:var(--text);padding:12px 24px;border-radius:16px;font-weight:600;font-size:14px;box-shadow:0 12px 36px rgba(0,0,0,.18);z-index:3000;transition:transform .35s cubic-bezier(0.34,1.56,0.64,1);pointer-events:none}
 .toast.show{transform:translateX(-50%) translateY(0)}
 .logbox{background:var(--bg);padding:14px;border-radius:12px;font-family:'SF Mono',monospace;font-size:11px;white-space:pre-wrap;max-height:300px;overflow-y:auto;line-height:1.6}
+.call-active-banner{background:rgba(52,199,89,.15);border:1px solid var(--ok);border-radius:16px;padding:14px 18px;margin-bottom:14px;display:none;align-items:center;justify-content:space-between}
+.call-active-banner.show{display:flex}
 </style>
 </head>
 <body>
@@ -76,17 +77,17 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
     <div class="grid">
       <div class="card">
         <div class="vs">在线蜂窝模组</div>
-        <div class="vb" id="mod-count">2</div>
+        <div class="vb" id="mod-count">1</div>
       </div>
       <div class="card">
         <div class="vs">信号质量 (最高)</div>
-        <div class="vb" id="sig-quality">92%</div>
+        <div class="vb" id="sig-quality">83%</div>
       </div>
     </div>
 
     <div class="sub">检测到的蜂窝设备</div>
     <div id="modem-list">
-      <div class="card">加载模组中...</div>
+      <div class="card">正在从物理硬件探测模组...</div>
     </div>
   </div>
 
@@ -101,12 +102,21 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
     <div class="sub">短信收件箱与验证码</div>
     <div id="sms-list">
-      <div class="card">加载短信中...</div>
+      <div class="card">暂无收到的短信记录</div>
     </div>
   </div>
 
   <!-- Page 3: 电话与音频 -->
   <div id="pg-phone" class="pg">
+    <!-- 通话状态控制横条 -->
+    <div id="call-banner" class="call-active-banner">
+      <div>
+        <div style="font-weight:700;color:var(--ok);font-size:15px;" id="call-status-txt">📞 正在通话中...</div>
+        <div style="font-size:12px;color:var(--sec);" id="call-target-num">对端: </div>
+      </div>
+      <button class="btn btn-d" style="width:auto;padding:8px 16px;font-size:13px;" onclick="hangupCall()">🔴 挂断电话</button>
+    </div>
+
     <div class="card">
       <div style="font-size:16px;font-weight:700;margin-bottom:12px;">电话拨号盘</div>
       <input type="text" id="phone-num" class="minput" placeholder="输入要拨打的电话号码" style="font-size:22px;text-align:center;letter-spacing:1px;">
@@ -129,7 +139,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
     <div class="sub">通话记录与录音</div>
     <div id="call-list">
-      <div class="card">加载通话记录中...</div>
+      <div class="card">暂无通话记录</div>
     </div>
   </div>
 
@@ -196,6 +206,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <div id="toast-box" class="toast">提示信息</div>
 
 <script>
+let activeModuleID = 'mod_hw_1';
+
 function switchPage(name, btn) {
   document.querySelectorAll('.pg').forEach(p => p.classList.remove('act'));
   document.querySelectorAll('.dbtn').forEach(b => b.classList.remove('act'));
@@ -217,8 +229,10 @@ function pressDial(num) {
 async function loadModules() {
   try {
     const res = await fetch('/api/modules').then(r => r.json());
-    if(res.code === 200) {
+    if(res.code === 200 && res.data && res.data.length > 0) {
+      activeModuleID = res.data[0].id;
       document.getElementById('mod-count').innerText = res.data.length;
+      document.getElementById('sig-quality').innerText = res.data[0].signal_percent + '%';
       let html = '';
       res.data.forEach(m => {
         html += `<div class="card">
@@ -245,7 +259,7 @@ async function loadModules() {
 async function loadSMS() {
   try {
     const res = await fetch('/api/sms').then(r => r.json());
-    if(res.code === 200) {
+    if(res.code === 200 && res.data && res.data.length > 0) {
       let html = '';
       res.data.forEach(s => {
         html += `<div class="card">
@@ -276,15 +290,52 @@ async function sendSMS() {
     showToast('请填写接收号码与短信内容！');
     return;
   }
+  showToast('正在从蜂窝硬件发送短信...');
   const res = await fetch('/api/sms', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({module_id: 'mod_qdc507_01', receiver: to, content: content})
+    body: JSON.stringify({module_id: activeModuleID, receiver: to, content: content})
   }).then(r => r.json());
   if(res.code === 200) {
-    showToast('短信已发送！');
+    showToast('短信已发出！');
     document.getElementById('sms-text').value = '';
-    loadSMS();
+    setTimeout(loadSMS, 1000);
+  }
+}
+
+async function loadCalls() {
+  try {
+    const res = await fetch('/api/calls').then(r => r.json());
+    if(res.code === 200 && res.data && res.data.length > 0) {
+      let html = '';
+      let hasActive = false;
+      res.data.forEach(c => {
+        if(c.status === 'active') {
+          hasActive = true;
+          document.getElementById('call-target-num').innerText = '对端号码: ' + c.phone_number;
+        }
+        html += `<div class="card">
+          <div class="li">
+            <div class="ll">
+              <div class="licon">📞</div>
+              <div>
+                <div class="ln">${c.phone_number} (${c.direction === 'outbound' ? '呼出' : '呼入'})</div>
+                <div class="lm">${new Date(c.start_time).toLocaleString()}</div>
+              </div>
+            </div>
+            <span class="badge ${c.status === 'active' ? 'b-ok' : 'b-info'}">${c.status === 'active' ? '通话中...' : '已结束 (' + c.duration_sec + '秒)'}</span>
+          </div>
+        </div>`;
+      });
+      document.getElementById('call-list').innerHTML = html;
+      if(hasActive) {
+        document.getElementById('call-banner').classList.add('show');
+      } else {
+        document.getElementById('call-banner').classList.remove('show');
+      }
+    }
+  } catch(e) {
+    console.error(e);
   }
 }
 
@@ -294,14 +345,30 @@ async function makeCall() {
     showToast('请输入要拨打的电话号码！');
     return;
   }
+  showToast('正在发起蜂窝硬件拨号...');
   const res = await fetch('/api/calls', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({module_id: 'mod_qdc507_01', phone_number: num})
+    body: JSON.stringify({module_id: activeModuleID, phone_number: num})
   }).then(r => r.json());
   if(res.code === 200) {
-    showToast('呼叫请求已发出...');
+    showToast('已成功触发 ATD 拨号！');
+    document.getElementById('call-banner').classList.add('show');
+    document.getElementById('call-target-num').innerText = '对端号码: ' + num;
+    setTimeout(loadCalls, 1000);
   }
+}
+
+async function hangupCall() {
+  showToast('正在发送 ATH 挂断信号...');
+  const res = await fetch('/api/calls', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({module_id: activeModuleID, action: 'hangup'})
+  }).then(r => r.json());
+  document.getElementById('call-banner').classList.remove('show');
+  showToast('已挂断电话！');
+  setTimeout(loadCalls, 1000);
 }
 
 async function sendAT() {
@@ -323,6 +390,12 @@ async function sendAT() {
 window.onload = () => {
   loadModules();
   loadSMS();
+  loadCalls();
+  setInterval(() => {
+    loadModules();
+    loadSMS();
+    loadCalls();
+  }, 3000);
 };
 </script>
 </body>

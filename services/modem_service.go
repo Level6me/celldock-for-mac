@@ -196,7 +196,7 @@ func (s *ModemService) InitiateCall(moduleID, phoneNumber string) (*models.CallR
 
 	mod, ok := s.modules[moduleID]
 	port := "/dev/ttyUSB2"
-	if ok {
+	if ok && mod.Port != "" {
 		port = mod.Port
 	}
 
@@ -220,6 +220,32 @@ func (s *ModemService) InitiateCall(moduleID, phoneNumber string) (*models.CallR
 	s.callRecords = append([]*models.CallRecord{rec}, s.callRecords...)
 
 	return rec, nil
+}
+
+func (s *ModemService) HangupCall(moduleID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	mod, ok := s.modules[moduleID]
+	port := "/dev/ttyUSB2"
+	if ok && mod.Port != "" {
+		port = mod.Port
+	}
+
+	go func() {
+		rawResp, _ := utils.ExecATCommand(port, "ATH", 2*time.Second)
+		s.mu.Lock()
+		s.atLogs = append(s.atLogs, fmt.Sprintf("[%s] %s -> Hangup ATH: %s", time.Now().Format("15:04:05"), port, rawResp))
+		for _, rec := range s.callRecords {
+			if rec.Status == "active" {
+				rec.Status = "ended"
+				rec.DurationSec = int(time.Since(rec.StartTime).Seconds())
+			}
+		}
+		s.mu.Unlock()
+	}()
+
+	return nil
 }
 
 func (s *ModemService) SendATCommand(port, cmd string) string {

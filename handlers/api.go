@@ -69,7 +69,7 @@ func RegisterAPIRoutes(mux *http.ServeMux) {
 		}
 	})
 
-	// GET /api/calls, POST /api/calls/dial
+	// GET /api/calls, POST /api/calls/dial, POST /api/calls/hangup
 	mux.HandleFunc("/api/calls", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -83,6 +83,19 @@ func RegisterAPIRoutes(mux *http.ServeMux) {
 		}
 
 		if r.Method == http.MethodPost {
+			if strings.HasSuffix(r.URL.Path, "/hangup") {
+				var req struct {
+					ModuleID string `json:"module_id"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&req)
+				_ = svc.HangupCall(req.ModuleID)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"code": 200,
+					"msg":  "挂断信号已发出",
+				})
+				return
+			}
+
 			var req struct {
 				ModuleID    string `json:"module_id"`
 				PhoneNumber string `json:"phone_number"`

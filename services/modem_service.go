@@ -21,6 +21,7 @@ type ModemService struct {
 	proxyConfigs map[string]*models.SOCKSProxyConfig
 	esimProfiles map[string][]*models.ESIMProfile
 	atLogs       []string
+	lastDialTime time.Time
 }
 
 var globalModemService *ModemService
@@ -52,6 +53,13 @@ func (s *ModemService) startCallStateMonitor() {
 }
 
 func (s *ModemService) checkActiveCallState() {
+	s.mu.RLock()
+	if time.Since(s.lastDialTime) < 4*time.Second {
+		s.mu.RUnlock()
+		return
+	}
+	s.mu.RUnlock()
+
 	port := "/dev/ttyUSB2"
 	resp, err := utils.ExecATCommand(port, "AT+CLCC\r\n", 400*time.Millisecond)
 	if err != nil {
@@ -277,6 +285,8 @@ func (s *ModemService) ListCallRecords() []*models.CallRecord {
 func (s *ModemService) InitiateCall(moduleID, phoneNumber string) (*models.CallRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	s.lastDialTime = time.Now()
 
 	mod, ok := s.modules[moduleID]
 	port := "/dev/ttyUSB2"

@@ -148,38 +148,30 @@ func (s *ModemService) startHardwareScanner() {
 }
 
 func (s *ModemService) ScanRealHardware() {
-	ports := []string{"/dev/ttyUSB2", "/dev/ttyUSB3", "/dev/ttyUSB1", "/dev/ttyUSB0"}
-
-	for i, port := range ports {
-		if fi, err := os.Stat(port); err != nil || fi.IsDir() {
-			continue
-		}
-
-		resp, err := utils.ExecATCommand(port, "ATI;+CSQ;+COPS?\r\n", 800*time.Millisecond)
-		if err != nil || !strings.Contains(resp, "OK") {
-			continue
-		}
-
-		id := fmt.Sprintf("mod_hw_%d", i+1)
+	port := "/dev/ttyUSB2"
+	if fi, err := os.Stat(port); err == nil && !fi.IsDir() {
+		id := "mod_hw_1"
 		modName := "Baiwang QDC507 5G/4G Modem"
-		if strings.Contains(resp, "EG25") {
-			modName = "Quectel EG25-G Modem"
-		}
-
 		signalCSQ := 26
 		signalPercent := 83
-		if match := regexp.MustCompile(`\+CSQ:\s*(\d+)`).FindStringSubmatch(resp); len(match) > 1 {
-			csq, _ := strconv.Atoi(match[1])
-			if csq != 99 {
-				signalCSQ = csq
-				signalPercent = int(float64(csq) / 31.0 * 100.0)
-			}
-		}
-
 		operator := "CHN-UNICOM 5G/4G"
 		networkTech := "5G/4G LTE"
-		if match := regexp.MustCompile(`"([^"]+)"`).FindStringSubmatch(resp); len(match) > 1 {
-			operator = match[1]
+
+		resp, err := utils.ExecATCommand(port, "ATI;+CSQ;+COPS?\r\n", 800*time.Millisecond)
+		if err == nil && strings.Contains(resp, "OK") {
+			if strings.Contains(resp, "EG25") {
+				modName = "Quectel EG25-G Modem"
+			}
+			if match := regexp.MustCompile(`\+CSQ:\s*(\d+)`).FindStringSubmatch(resp); len(match) > 1 {
+				csq, _ := strconv.Atoi(match[1])
+				if csq != 99 {
+					signalCSQ = csq
+					signalPercent = int(float64(csq) / 31.0 * 100.0)
+				}
+			}
+			if match := regexp.MustCompile(`"([^"]+)"`).FindStringSubmatch(resp); len(match) > 1 {
+				operator = match[1]
+			}
 		}
 
 		s.mu.Lock()
@@ -199,8 +191,6 @@ func (s *ModemService) ScanRealHardware() {
 			LastSeen:      time.Now(),
 		}
 		s.mu.Unlock()
-		fmt.Printf("[ModemService] Real Cellular Modem Discovered on %s (%s, Operator: %s, CSQ: %d)\n", port, modName, operator, signalCSQ)
-		break
 	}
 }
 
@@ -297,10 +287,6 @@ func (s *ModemService) InitiateCall(moduleID, phoneNumber string) (*models.CallR
 	go func() {
 		dialCmd := fmt.Sprintf("ATD%s;", phoneNumber)
 		rawResp, _ := utils.ExecATCommand(port, dialCmd, 2*time.Second)
-		time.Sleep(500 * time.Millisecond)
-		// Unmute modem mic and set call volume
-		_, _ = utils.ExecATCommand(port, "AT+CMUT=0", 500*time.Millisecond)
-		_, _ = utils.ExecATCommand(port, "AT+CLVL=5", 500*time.Millisecond)
 		s.mu.Lock()
 		s.atLogs = append(s.atLogs, fmt.Sprintf("[%s] %s -> Dial %s: %s", time.Now().Format("15:04:05"), port, phoneNumber, rawResp))
 		s.mu.Unlock()
